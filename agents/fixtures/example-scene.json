@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "1.0.0",
+  "timeline": {
+    "durationSeconds": 3.0,
+    "fps": 30
+  },
+  "camera": {
+    "width": 1920,
+    "height": 1080,
+    "keyframes": [
+      { "t": 0.0, "center": [960, 540], "zoom": 1.0 },
+      { "t": 3.0, "center": [1400, 540], "zoom": 1.25 }
+    ]
+  },
+  "objects": [
+    {
+      "id": "stroke-1",
+      "type": "freehand",
+      "points": [
+        { "x": 300, "y": 440 },
+        { "x": 340, "y": 410 },
+        { "x": 390, "y": 400 },
+        { "x": 440, "y": 410 },
+        { "x": 480, "y": 440 },
+        { "x": 500, "y": 480 },
+        { "x": 500, "y": 530 },
+        { "x": 480, "y": 575 },
+        { "x": 440, "y": 605 },
+        { "x": 390, "y": 615 },
+        { "x": 340, "y": 605 },
+        { "x": 300, "y": 575 },
+        { "x": 280, "y": 530 },
+        { "x": 280, "y": 480 },
+        { "x": 300, "y": 440 }
+      ],
+      "style": {
+        "color": "#1e1e1e",
+        "width": 3,
+        "opacity": 1.0
+      },
+      "keyframes": [
+        {
+          "t": 0.0,
+          "props": { "position": [0, 0], "scale": 1.0, "rotation": 0, "opacity": 1.0 }
+        },
+        {
+          "t": 3.0,
+          "props": { "position": [900, 0], "scale": 1.0, "rotation": 0, "opacity": 1.0 }
+        }
+      ]
+    }
+  ]
+}
