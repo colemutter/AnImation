@@ -19,6 +19,9 @@ venv/
 .env.*
 !.env.example
 
+# ---- Rendered media (T3 Manim output) ----
+media/
+
 # ---- Editor / OS ----
 .DS_Store
 .idea/

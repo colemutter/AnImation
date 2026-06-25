@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from render import register_render
+
 app = FastAPI(title="AnImation API")
 
 # Allow the Vite dev server to call this API during local development.
@@ -11,6 +13,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# T3: Manim render pipeline -- mounts /media and registers POST /api/render.
+register_render(app)
 
 
 @app.get("/api/health")
