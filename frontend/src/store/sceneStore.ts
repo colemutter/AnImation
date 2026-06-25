@@ -25,13 +25,32 @@ import type {
   StrokeStyle,
   SceneObject,
   FreehandObject,
+  TextObject,
+  EquationObject,
   ObjectProps,
   CameraKeyframe,
 } from '../types/scene'
 import { upsertKeyframe, interpolateKeyframes } from '../timeline/interpolate'
 
-/** Tools available in the palette. Widen as shape/text/eraser tools land. */
-export type Tool = 'select' | 'draw'
+/**
+ * Tools available in the palette. `select` doubles as pan; `draw` is freehand;
+ * the rest place/drag a single primitive of the matching object variant.
+ */
+export type Tool =
+  | 'select'
+  | 'draw'
+  | 'text'
+  | 'line'
+  | 'arrow'
+  | 'rect'
+  | 'ellipse'
+  | 'triangle'
+  | 'equation'
+
+/** Default font size (canvas px) for new text/equation objects. */
+const DEFAULT_FONT_SIZE = 24
+/** Default color for new text/equation objects. */
+const DEFAULT_TEXT_COLOR = '#1e1e1e'
 
 /** Screen<->world viewport transform. world = (screen - offset) / zoom. */
 export interface Viewport {
@@ -53,6 +72,13 @@ let strokeCounter = 0
 function nextStrokeId(): string {
   strokeCounter += 1
   return `stroke-${Date.now().toString(36)}-${strokeCounter}`
+}
+
+let objectCounter = 0
+/** Unique id for a newly created (non-freehand) object, e.g. "text-...". */
+function nextObjectId(prefix: string): string {
+  objectCounter += 1
+  return `${prefix}-${Date.now().toString(36)}-${objectCounter}`
 }
 
 // --- camera (T5) ---------------------------------------------------------
@@ -174,6 +200,12 @@ interface SceneState {
   /** Id of the currently selected object (for keyframe capture), or null. */
   selectedId: string | null
   /**
+   * Id of the text/equation object whose inline editor is open, or null. The
+   * canvas renders an HTML field over this object so the user can type its
+   * content; committing (blur/Enter) clears this back to null.
+   */
+  editingId: string | null
+  /**
    * Live drag delta (canvas px) for the selected object, applied on top of its
    * resolved keyframe transform while dragging and not yet committed to a
    * keyframe. Null when not dragging an object.
@@ -222,6 +254,29 @@ interface SceneState {
 
   /** Remove every drawn object. */
   clear: () => void
+
+  // --- primitive creation (F2) ---
+  /**
+   * Append a fully-formed object (already in wire shape) to `objects` and
+   * select it. Returns the object's id. Used by the canvas creation gestures.
+   */
+  addObject: (obj: SceneObject) => string
+  /**
+   * Create a text box at a world-space top-left and open its inline editor.
+   * Returns the new object's id.
+   */
+  addTextAt: (x: number, y: number) => string
+  /**
+   * Create a LaTeX equation box at a world-space top-left and open its inline
+   * editor. Returns the new object's id.
+   */
+  addEquationAt: (x: number, y: number) => string
+  /** Set the text content of a text/equation object (by id). */
+  setObjectText: (id: string, value: string) => void
+  /** Open the inline editor for a text/equation object (by id), or close (null). */
+  setEditing: (id: string | null) => void
+  /** Delete an object by id, clearing selection/editing if it was active. */
+  removeObject: (id: string) => void
 
   // --- timeline actions (T4) ---
   /** Set the playhead time (seconds); clamps to [0, durationSeconds]. */
@@ -297,6 +352,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   currentTime: 0,
   isPlaying: false,
   selectedId: null,
+  editingId: null,
   liveDrag: null,
 
   cameraWidth: DEFAULT_CAMERA_WIDTH,
@@ -367,9 +423,72 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       objects: [],
       draftPoints: null,
       selectedId: null,
+      editingId: null,
       liveDrag: null,
       isPlaying: false,
     }),
+
+  // --- primitive creation (F2) ---
+
+  addObject: (obj) => {
+    set((s) => ({ objects: [...s.objects, obj], selectedId: obj.id }))
+    return obj.id
+  },
+
+  addTextAt: (x, y) => {
+    const obj: TextObject = {
+      id: nextObjectId('text'),
+      type: 'text',
+      position: [x, y],
+      text: '',
+      fontSize: DEFAULT_FONT_SIZE,
+      color: DEFAULT_TEXT_COLOR,
+      keyframes: [],
+    }
+    set((s) => ({
+      objects: [...s.objects, obj],
+      selectedId: obj.id,
+      editingId: obj.id,
+    }))
+    return obj.id
+  },
+
+  addEquationAt: (x, y) => {
+    const obj: EquationObject = {
+      id: nextObjectId('eq'),
+      type: 'equation',
+      position: [x, y],
+      latex: '',
+      fontSize: DEFAULT_FONT_SIZE,
+      color: DEFAULT_TEXT_COLOR,
+      keyframes: [],
+    }
+    set((s) => ({
+      objects: [...s.objects, obj],
+      selectedId: obj.id,
+      editingId: obj.id,
+    }))
+    return obj.id
+  },
+
+  setObjectText: (id, value) =>
+    set((s) => ({
+      objects: s.objects.map((o) => {
+        if (o.id !== id) return o
+        if (o.type === 'text') return { ...o, text: value }
+        if (o.type === 'equation') return { ...o, latex: value }
+        return o
+      }),
+    })),
+
+  setEditing: (id) => set({ editingId: id }),
+
+  removeObject: (id) =>
+    set((s) => ({
+      objects: s.objects.filter((o) => o.id !== id),
+      selectedId: s.selectedId === id ? null : s.selectedId,
+      editingId: s.editingId === id ? null : s.editingId,
+    })),
 
   // --- timeline actions (T4) ---
 

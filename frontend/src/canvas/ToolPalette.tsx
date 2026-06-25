@@ -15,8 +15,15 @@ interface ToolDef {
 }
 
 const TOOLS: ToolDef[] = [
-  { id: 'select', label: 'Select / Pan', glyph: '✋', hint: 'Pan the canvas (V)' },
+  { id: 'select', label: 'Select / Pan', glyph: '✋', hint: 'Select / pan the canvas (V)' },
   { id: 'draw', label: 'Draw', glyph: '✎', hint: 'Freehand draw (D)' },
+  { id: 'text', label: 'Text', glyph: 'T', hint: 'Text box — click to place (T)' },
+  { id: 'line', label: 'Line', glyph: '╱', hint: 'Line — drag start → end (L)' },
+  { id: 'arrow', label: 'Arrow', glyph: '→', hint: 'Arrow — drag tail → head (A)' },
+  { id: 'rect', label: 'Rectangle', glyph: '▭', hint: 'Rectangle — drag a box (R)' },
+  { id: 'ellipse', label: 'Ellipse', glyph: '◯', hint: 'Ellipse — drag a box (O)' },
+  { id: 'triangle', label: 'Triangle', glyph: '△', hint: 'Triangle — drag a box' },
+  { id: 'equation', label: 'Equation', glyph: '∑', hint: 'LaTeX equation — click to place (E)' },
 ]
 
 export function ToolPalette() {

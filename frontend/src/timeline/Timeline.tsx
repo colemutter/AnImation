@@ -39,6 +39,7 @@ export function Timeline() {
   const setCurrentTime = useSceneStore((s) => s.setCurrentTime)
   const setPlaying = useSceneStore((s) => s.setPlaying)
   const togglePlaying = useSceneStore((s) => s.togglePlaying)
+  const setDuration = useSceneStore((s) => s.setDuration)
 
   const trackRef = useRef<HTMLDivElement | null>(null)
   const scrubbing = useRef(false)
@@ -159,6 +160,26 @@ export function Timeline() {
       <span className="timeline-readout" title="Current time / duration">
         {formatTime(currentTime)} / {formatTime(durationSeconds)}
       </span>
+
+      {/* Adjustable max duration (seconds). Re-clamps the playhead via the
+          store's setDuration; keyframes past the new end stay but the playhead
+          clamps in. */}
+      <label className="timeline-duration" title="Timeline length (seconds)">
+        <span className="timeline-duration-label">dur</span>
+        <input
+          className="timeline-duration-input"
+          type="number"
+          min={0.1}
+          step={0.5}
+          value={Number(durationSeconds.toFixed(2))}
+          onChange={(e) => {
+            const v = parseFloat(e.target.value)
+            if (!Number.isNaN(v)) setDuration(v)
+          }}
+          aria-label="Timeline duration in seconds"
+        />
+        <span className="timeline-duration-unit">s</span>
+      </label>
     </div>
   )
 }
