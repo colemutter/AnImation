@@ -107,3 +107,123 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* --- Bottom timeline bar (T4, Excalidraw-like chrome) --- */
+.timeline {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(720px, calc(100% - 32px));
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  z-index: 10;
+  user-select: none;
+}
+
+.timeline-play {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-h);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.timeline-play:hover {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+
+.timeline-play[aria-pressed='true'] {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+
+.timeline-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.timeline-track-line {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.timeline-keyframe {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: var(--accent);
+  border: 1px solid var(--bg);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.timeline-playhead {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 0;
+  pointer-events: none;
+}
+
+.timeline-playhead::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  background: var(--text-h);
+  border-radius: 1px;
+}
+
+.timeline-playhead-knob {
+  position: absolute;
+  top: -2px;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: var(--text-h);
+  border: 2px solid var(--bg);
+  box-shadow: var(--shadow);
+}
+
+.timeline-readout {
+  flex: none;
+  font-size: 13px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  min-width: 92px;
+  text-align: right;
+}

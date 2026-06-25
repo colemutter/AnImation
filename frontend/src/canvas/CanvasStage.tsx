@@ -21,7 +21,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSceneStore } from '../store/sceneStore'
 import { screenToWorld, strokeToPath } from './stroke'
+import { interpolateKeyframes } from '../timeline/interpolate'
 import type { FreehandObject } from '../types/scene'
+
+/** Centroid (in world px) of a stroke's points — the pivot for scale/rotate. */
+function strokeCentroid(obj: FreehandObject): { x: number; y: number } {
+  const n = obj.points.length || 1
+  let sx = 0
+  let sy = 0
+  for (const p of obj.points) {
+    sx += p.x
+    sy += p.y
+  }
+  return { x: sx / n, y: sy / n }
+}
 
 /** Spacing of the background dot grid in world units. */
 const GRID_SIZE = 32
@@ -36,6 +49,9 @@ export function CanvasStage() {
   const objects = useSceneStore((s) => s.objects)
   const draftPoints = useSceneStore((s) => s.draftPoints)
   const strokeStyle = useSceneStore((s) => s.strokeStyle)
+  const currentTime = useSceneStore((s) => s.currentTime)
+  const selectedId = useSceneStore((s) => s.selectedId)
+  const liveDrag = useSceneStore((s) => s.liveDrag)
 
   const startStroke = useSceneStore((s) => s.startStroke)
   const appendPoint = useSceneStore((s) => s.appendPoint)
@@ -43,10 +59,14 @@ export function CanvasStage() {
   const panBy = useSceneStore((s) => s.panBy)
   const zoomAt = useSceneStore((s) => s.zoomAt)
   const setTool = useSceneStore((s) => s.setTool)
+  const selectObject = useSceneStore((s) => s.selectObject)
+  const beginObjectDrag = useSceneStore((s) => s.beginObjectDrag)
+  const dragObjectBy = useSceneStore((s) => s.dragObjectBy)
+  const endObjectDrag = useSceneStore((s) => s.endObjectDrag)
 
   // Track the live gesture without re-rendering on every move.
   const gesture = useRef<{
-    mode: 'draw' | 'pan' | null
+    mode: 'draw' | 'pan' | 'object' | null
     lastX: number
     lastY: number
   }>({ mode: null, lastX: 0, lastY: 0 })
@@ -88,11 +108,52 @@ export function CanvasStage() {
     return { sx: e.clientX - rect.left, sy: e.clientY - rect.top }
   }, [])
 
+  /**
+   * Hit-test the topmost object under a world point. Compares against each
+   * object's RESOLVED position (authored centroid + interpolated keyframe
+   * translation at `currentTime`), within a zoom-aware radius. Returns the
+   * object id or null. Last drawn wins (iterate in reverse).
+   */
+  const hitTest = useCallback(
+    (worldX: number, worldY: number): string | null => {
+      // Generous pick radius in world px (so thin strokes are still grabbable).
+      const r = 24 / viewport.zoom
+      for (let i = objects.length - 1; i >= 0; i--) {
+        const obj = objects[i]
+        const { position } = interpolateKeyframes(obj.keyframes, currentTime)
+        for (const p of obj.points) {
+          const dx = p.x + position[0] - worldX
+          const dy = p.y + position[1] - worldY
+          if (dx * dx + dy * dy <= r * r) return obj.id
+        }
+      }
+      return null
+    },
+    [objects, currentTime, viewport.zoom],
+  )
+
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       const { sx, sy } = localPoint(e)
-      const wantPan =
-        spaceHeld || e.button === 1 || (tool === 'select' && e.button === 0)
+
+      // Select tool, primary button, no pan modifier: try to grab an object.
+      if (tool === 'select' && e.button === 0 && !spaceHeld) {
+        const world = screenToWorld(sx, sy, viewport)
+        const hitId = hitTest(world.x, world.y)
+        ;(e.target as Element).setPointerCapture?.(e.pointerId)
+        gesture.current.lastX = sx
+        gesture.current.lastY = sy
+        if (hitId) {
+          gesture.current.mode = 'object'
+          beginObjectDrag(hitId)
+        } else {
+          gesture.current.mode = 'pan'
+          selectObject(null)
+        }
+        return
+      }
+
+      const wantPan = spaceHeld || e.button === 1
       const wantDraw = tool === 'draw' && e.button === 0 && !spaceHeld
       if (!wantPan && !wantDraw) return
 
@@ -107,7 +168,16 @@ export function CanvasStage() {
         startStroke(screenToWorld(sx, sy, viewport))
       }
     },
-    [localPoint, spaceHeld, tool, startStroke, viewport],
+    [
+      localPoint,
+      spaceHeld,
+      tool,
+      startStroke,
+      viewport,
+      hitTest,
+      beginObjectDrag,
+      selectObject,
+    ],
   )
 
   const onPointerMove = useCallback(
@@ -119,11 +189,17 @@ export function CanvasStage() {
         panBy(sx - g.lastX, sy - g.lastY)
         g.lastX = sx
         g.lastY = sy
+      } else if (g.mode === 'object') {
+        // Convert the screen delta to a world delta (drag in world units so the
+        // captured keyframe position is in canvas px, matching the schema).
+        dragObjectBy((sx - g.lastX) / viewport.zoom, (sy - g.lastY) / viewport.zoom)
+        g.lastX = sx
+        g.lastY = sy
       } else {
         appendPoint(screenToWorld(sx, sy, viewport))
       }
     },
-    [localPoint, panBy, appendPoint, viewport],
+    [localPoint, panBy, appendPoint, dragObjectBy, viewport],
   )
 
   const endGesture = useCallback(
@@ -131,10 +207,11 @@ export function CanvasStage() {
       const g = gesture.current
       if (!g.mode) return
       if (g.mode === 'draw') endStroke()
+      if (g.mode === 'object') endObjectDrag()
       g.mode = null
       ;(e.target as Element).releasePointerCapture?.(e.pointerId)
     },
-    [endStroke],
+    [endStroke, endObjectDrag],
   )
 
   // Wheel: ctrl/cmd or pinch -> zoom toward cursor; otherwise pan.
@@ -200,7 +277,14 @@ export function CanvasStage() {
         )}
 
         {objects.map((obj) => (
-          <StrokePath key={obj.id} obj={obj} />
+          <StrokePath
+            key={obj.id}
+            obj={obj}
+            time={currentTime}
+            selected={obj.id === selectedId}
+            // Live, uncommitted drag delta for the object being dragged.
+            live={liveDrag && liveDrag.id === obj.id ? liveDrag : null}
+          />
         ))}
 
         {/* In-progress stroke, drawn with the active style. */}
@@ -222,7 +306,50 @@ export function CanvasStage() {
   )
 }
 
-function StrokePath({ obj }: { obj: FreehandObject }) {
-  const d = strokeToPath(obj.points, obj.style)
-  return <path d={d} fill={obj.style.color} fillOpacity={obj.style.opacity} />
+/**
+ * One drawn stroke, rendered at its interpolated state for `time`. The authored
+ * path is built once; the per-time transform (translate + rotate/scale about the
+ * stroke centroid) is applied via an SVG `transform` so scrubbing/playing only
+ * changes the wrapper, not the path geometry. A live drag delta (the object
+ * being dragged, not yet committed to a keyframe) is added on top.
+ */
+function StrokePath({
+  obj,
+  time,
+  selected,
+  live,
+}: {
+  obj: FreehandObject
+  time: number
+  selected: boolean
+  live: { dx: number; dy: number } | null
+}) {
+  const d = useMemo(() => strokeToPath(obj.points, obj.style), [obj.points, obj.style])
+  const resolved = interpolateKeyframes(obj.keyframes, time)
+  const c = strokeCentroid(obj)
+  const tx = resolved.position[0] + (live ? live.dx : 0)
+  const ty = resolved.position[1] + (live ? live.dy : 0)
+  // Order: translate to keyframe position, then scale/rotate about the centroid.
+  const transform =
+    `translate(${tx} ${ty}) ` +
+    `translate(${c.x} ${c.y}) ` +
+    `rotate(${resolved.rotation}) ` +
+    `scale(${resolved.scale}) ` +
+    `translate(${-c.x} ${-c.y})`
+  return (
+    <g transform={transform} opacity={resolved.opacity}>
+      <path d={d} fill={obj.style.color} fillOpacity={obj.style.opacity} />
+      {selected && (
+        <path
+          d={d}
+          fill="none"
+          stroke="var(--accent)"
+          strokeWidth={2}
+          strokeOpacity={0.9}
+          className="stroke-selected-outline"
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
+    </g>
+  )
 }

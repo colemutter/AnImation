@@ -15,6 +15,7 @@
 
 import { CanvasStage } from './canvas/CanvasStage'
 import { ToolPalette } from './canvas/ToolPalette'
+import { Timeline } from './timeline/Timeline'
 import './App.css'
 
 function App() {
@@ -23,8 +24,9 @@ function App() {
       <CanvasStage />
       <ToolPalette />
 
-      {/* EXTENSION POINT (T4 timeline): mount the bottom timeline bar here as
-          an overlay so it sits above the canvas at the bottom edge. */}
+      {/* EXTENSION POINT (T4 timeline): mounted as an overlay so it sits above
+          the canvas at the bottom edge. */}
+      <Timeline />
     </div>
   )
 }
