@@ -71,9 +71,11 @@ Pending (needs a key):
 
 ```bash
 cd backend
-ANTHROPIC_API_KEY=sk-ant-... uv run python - <<'PY'
+uv run --env-file .env python - <<'PY'
 import json, agent, render
-scene = json.load(open("../agents/fixtures/example-scene.json"))
+from schema import Scene
+# generate_manim expects a Scene model (over HTTP, FastAPI parses it for you).
+scene = Scene.model_validate(json.load(open("../agents/fixtures/example-scene.json")))
 g = agent.generate_manim(scene)            # AI -> {code, notes}
 print("notes:", g["notes"][:200])
 r = render.render_manim(g["code"])         # Manim -> MP4
@@ -81,6 +83,10 @@ print("render:", r.status, r.video_url)
 print(r.logs[-500:] if r.status != "success" else "OK")
 PY
 ```
+
+> Verified live (2026-06-25): generate returned valid Manim (41 lines, `Scene`
+> subclass, no LaTeX), render produced a playable MP4, and the video plays in the
+> preview pane — confirmed both via HTTP and through the in-app Convert button.
 
 ## Known follow-ups
 
