@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from agent import register_agent
 from render import register_render
 
 app = FastAPI(title="AnImation API")
@@ -16,6 +17,9 @@ app.add_middleware(
 
 # T3: Manim render pipeline -- mounts /media and registers POST /api/render.
 register_render(app)
+
+# T6: AI codegen agent -- registers POST /api/generate (scene -> Manim code).
+register_agent(app)
 
 
 @app.get("/api/health")
