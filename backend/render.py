@@ -32,6 +32,7 @@ is used if detection fails.
 from __future__ import annotations
 
 import ast
+import os
 import shutil
 import subprocess
 import sys
@@ -39,6 +40,22 @@ import tempfile
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# LaTeX (MacTeX / TeX Live) bin dirs. Manim's MathTex shells out to `latex` +
+# `dvisvgm`, which must be on the render subprocess's PATH. A backend launched
+# from a shell that predates the TeX install won't have these, so we prepend
+# them explicitly rather than depending on how the server was started.
+_TEX_BIN_DIRS = ("/Library/TeX/texbin", "/usr/local/texlive/bin", "/opt/homebrew/bin")
+
+
+def _render_env() -> dict[str, str]:
+    """Process env for the Manim subprocess, with TeX bin dirs on PATH."""
+    env = dict(os.environ)
+    existing = env.get("PATH", "")
+    prefix = [d for d in _TEX_BIN_DIRS if os.path.isdir(d) and d not in existing]
+    if prefix:
+        env["PATH"] = os.pathsep.join([*prefix, existing]) if existing else os.pathsep.join(prefix)
+    return env
 
 # ---------------------------------------------------------------------------
 # Paths / configuration
@@ -188,7 +205,9 @@ def render_manim(code: str, *, timeout: int = RENDER_TIMEOUT_SECONDS) -> RenderR
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                # Fresh process; do not inherit a partially-configured cwd state.
+                # Ensure LaTeX (MathTex) is found regardless of how the server
+                # was launched.
+                env=_render_env(),
             )
         except subprocess.TimeoutExpired as exc:
             partial = (exc.stdout or "") + (exc.stderr or "")
