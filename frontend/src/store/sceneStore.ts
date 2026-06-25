@@ -26,6 +26,7 @@ import type {
   SceneObject,
   FreehandObject,
   ObjectProps,
+  CameraKeyframe,
 } from '../types/scene'
 import { upsertKeyframe, interpolateKeyframes } from '../timeline/interpolate'
 
@@ -52,6 +53,95 @@ let strokeCounter = 0
 function nextStrokeId(): string {
   strokeCounter += 1
   return `stroke-${Date.now().toString(36)}-${strokeCounter}`
+}
+
+// --- camera (T5) ---------------------------------------------------------
+
+/** Default output resolution; also fixes the camera frame aspect (16:9). */
+const DEFAULT_CAMERA_WIDTH = 1920
+const DEFAULT_CAMERA_HEIGHT = 1080
+
+/** Min/max camera zoom (zoom > 1 = tighter frame = zoomed in). */
+const MIN_CAM_ZOOM = 0.1
+const MAX_CAM_ZOOM = 20
+
+/** Resolved camera state at a point in time: where the frame sits + its zoom. */
+export interface ResolvedCamera {
+  /** Frame center in canvas px (y-DOWN). */
+  center: [number, number]
+  /** Zoom factor (> 1 zooms in / narrows the frame). */
+  zoom: number
+}
+
+/** Linear interpolation between two scalars. */
+function lerpN(a: number, b: number, f: number): number {
+  return a + (b - a) * f
+}
+
+/**
+ * Resolve the camera state at time `t` from a sorted `CameraKeyframe[]`. Mirrors
+ * `interpolateKeyframes` for objects: **linear** between successive keyframes,
+ * **hold/clamp** before the first and after the last. Falls back to `fallback`
+ * (the live store camera) when there are no keyframes.
+ */
+export function interpolateCameraKeyframes(
+  keyframes: CameraKeyframe[],
+  t: number,
+  fallback: ResolvedCamera,
+): ResolvedCamera {
+  if (!keyframes || keyframes.length === 0) return fallback
+  if (keyframes.length === 1) {
+    const k = keyframes[0]
+    return { center: [k.center[0], k.center[1]], zoom: k.zoom }
+  }
+  // Before the first keyframe: hold at it.
+  if (t <= keyframes[0].t) {
+    const k = keyframes[0]
+    return { center: [k.center[0], k.center[1]], zoom: k.zoom }
+  }
+  // After the last keyframe: hold at it.
+  const last = keyframes[keyframes.length - 1]
+  if (t >= last.t) return { center: [last.center[0], last.center[1]], zoom: last.zoom }
+  // Find the bracketing pair (keyframes are sorted by t ascending).
+  for (let i = 0; i < keyframes.length - 1; i++) {
+    const a = keyframes[i]
+    const b = keyframes[i + 1]
+    if (t >= a.t && t <= b.t) {
+      const span = b.t - a.t
+      const f = span <= 0 ? 0 : (t - a.t) / span
+      return {
+        center: [lerpN(a.center[0], b.center[0], f), lerpN(a.center[1], b.center[1], f)],
+        zoom: lerpN(a.zoom, b.zoom, f),
+      }
+    }
+  }
+  return { center: [last.center[0], last.center[1]], zoom: last.zoom }
+}
+
+/**
+ * Insert or update a camera keyframe at time `t`, replacing any keyframe at
+ * (≈) the same time and keeping the list sorted by `t`. Returns a NEW array
+ * (pure). This mirrors `upsertKeyframe` for objects — same capture pattern, on
+ * the `CameraKeyframe` shape rather than `{ t, props }`.
+ */
+export function upsertCameraKeyframe(
+  keyframes: CameraKeyframe[],
+  t: number,
+  center: [number, number],
+  zoom: number,
+  /** Times within this many seconds are treated as the same keyframe. */
+  epsilon = 1e-4,
+): CameraKeyframe[] {
+  const next = keyframes.map((k) => ({ t: k.t, center: [k.center[0], k.center[1]] as [number, number], zoom: k.zoom }))
+  const existing = next.find((k) => Math.abs(k.t - t) <= epsilon)
+  if (existing) {
+    existing.center = [center[0], center[1]]
+    existing.zoom = zoom
+  } else {
+    next.push({ t, center: [center[0], center[1]], zoom })
+    next.sort((a, b) => a.t - b.t)
+  }
+  return next
 }
 
 interface SceneState {
@@ -89,6 +179,28 @@ interface SceneState {
    * keyframe. Null when not dragging an object.
    */
   liveDrag: { id: string; dx: number; dy: number } | null
+
+  // --- camera state (T5) ---
+  /** Output width in px; also fixes the camera frame aspect ratio. */
+  cameraWidth: number
+  /** Output height in px. */
+  cameraHeight: number
+  /**
+   * Live camera frame center in canvas px (y-DOWN). This is the editable base
+   * the overlay reads/writes; during scrub/play the overlay shows the
+   * interpolated camera instead (see `interpolateCameraKeyframes`).
+   */
+  cameraCenter: [number, number]
+  /** Live camera zoom (> 1 zooms in / narrows the frame). */
+  cameraZoom: number
+  /** Camera keyframes in `CameraKeyframe` shape, sorted by `t` ascending. */
+  cameraKeyframes: CameraKeyframe[]
+  /**
+   * Live, uncommitted camera edit while dragging/resizing the frame, applied on
+   * top of the resolved camera and not yet written to a keyframe. Null when not
+   * editing the camera.
+   */
+  liveCamera: { center: [number, number]; zoom: number } | null
 
   // --- actions ---
   setTool: (tool: Tool) => void
@@ -143,6 +255,27 @@ interface SceneState {
    * upsert pattern on its own keyframe array.
    */
   captureKeyframe: (id: string, t: number, props: ObjectProps) => void
+
+  // --- camera actions (T5) ---
+  /**
+   * Begin editing the camera frame (drag or resize). Seeds `liveCamera` from the
+   * resolved camera at the current time so the edit is relative to wherever the
+   * frame sits now. Stops playback (editing while playing makes no sense).
+   */
+  beginCameraEdit: () => void
+  /**
+   * Update the live camera edit. `center` is the new frame center (canvas px);
+   * `zoom` the new zoom. Both default to the current live values when omitted.
+   */
+  dragCamera: (next: { center?: [number, number]; zoom?: number }) => void
+  /**
+   * Commit the live camera edit as a camera keyframe at `currentTime`, reusing
+   * the same upsert pattern T4 uses for objects (mirrored on `cameraKeyframes`).
+   * Also updates the live `cameraCenter`/`cameraZoom` base.
+   */
+  endCameraEdit: () => void
+  /** Resolve the camera (center + zoom) at the given time. */
+  resolveCameraAt: (t: number) => ResolvedCamera
 }
 
 const MIN_ZOOM = 0.1
@@ -165,6 +298,15 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   isPlaying: false,
   selectedId: null,
   liveDrag: null,
+
+  cameraWidth: DEFAULT_CAMERA_WIDTH,
+  cameraHeight: DEFAULT_CAMERA_HEIGHT,
+  // Default: frame centered on the output-resolution center, zoom 1. This puts
+  // the frame around the canvas origin region where the first strokes land.
+  cameraCenter: [DEFAULT_CAMERA_WIDTH / 2, DEFAULT_CAMERA_HEIGHT / 2],
+  cameraZoom: 1,
+  cameraKeyframes: [],
+  liveCamera: null,
 
   setTool: (tool) => set({ tool }),
 
@@ -301,6 +443,62 @@ export const useSceneStore = create<SceneState>((set, get) => ({
           : o,
       ),
     })),
+
+  // --- camera actions (T5) ---
+
+  beginCameraEdit: () => {
+    const { cameraKeyframes, currentTime, cameraCenter, cameraZoom } = get()
+    // Seed the live edit from the resolved camera at the current time, so a
+    // drag/resize starts from wherever the frame currently sits.
+    const resolved = interpolateCameraKeyframes(cameraKeyframes, currentTime, {
+      center: cameraCenter,
+      zoom: cameraZoom,
+    })
+    set({
+      isPlaying: false,
+      liveCamera: { center: [resolved.center[0], resolved.center[1]], zoom: resolved.zoom },
+    })
+  },
+
+  dragCamera: (next) =>
+    set((s) => {
+      if (!s.liveCamera) return {}
+      const center = next.center ?? s.liveCamera.center
+      const zoom =
+        next.zoom !== undefined
+          ? Math.min(MAX_CAM_ZOOM, Math.max(MIN_CAM_ZOOM, next.zoom))
+          : s.liveCamera.zoom
+      return { liveCamera: { center: [center[0], center[1]], zoom } }
+    }),
+
+  endCameraEdit: () => {
+    const { liveCamera, cameraKeyframes, currentTime } = get()
+    if (!liveCamera) return
+    // Commit as a camera keyframe at the current time (same upsert pattern T4
+    // uses for objects, mirrored on the CameraKeyframe array), and advance the
+    // live base so the frame stays put after the edit.
+    set({
+      cameraKeyframes: upsertCameraKeyframe(
+        cameraKeyframes,
+        currentTime,
+        liveCamera.center,
+        liveCamera.zoom,
+      ),
+      cameraCenter: [liveCamera.center[0], liveCamera.center[1]],
+      cameraZoom: liveCamera.zoom,
+      liveCamera: null,
+    })
+  },
+
+  resolveCameraAt: (t) => {
+    const { cameraKeyframes, cameraCenter, cameraZoom, liveCamera } = get()
+    // While actively editing, show the live (uncommitted) frame.
+    if (liveCamera) return { center: [liveCamera.center[0], liveCamera.center[1]], zoom: liveCamera.zoom }
+    return interpolateCameraKeyframes(cameraKeyframes, t, {
+      center: cameraCenter,
+      zoom: cameraZoom,
+    })
+  },
 }))
 
 /**

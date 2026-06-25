@@ -227,3 +227,34 @@
   min-width: 92px;
   text-align: right;
 }
+
+/* --- Camera viewport indicator (T5) --- */
+/* The frame is an SVG group inside the canvas world transform, so it pans and
+   zooms with the scene. Most sizing (stroke/handles/label) is computed in the
+   component as 1/zoom so it keeps constant on-screen weight; these rules cover
+   the aesthetic + interaction affordances. */
+.camera-overlay {
+  pointer-events: none; /* group itself is inert; children opt in below */
+}
+
+.camera-frame {
+  pointer-events: stroke; /* grab the border to move; interior stays click-through */
+}
+
+.camera-handle {
+  pointer-events: all;
+}
+
+.camera-handle:hover {
+  fill: var(--accent);
+}
+
+.camera-label {
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}

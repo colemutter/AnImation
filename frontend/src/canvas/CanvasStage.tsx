@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSceneStore } from '../store/sceneStore'
 import { screenToWorld, strokeToPath } from './stroke'
 import { interpolateKeyframes } from '../timeline/interpolate'
+import { CameraOverlay } from './CameraOverlay'
 import type { FreehandObject } from '../types/scene'
 
 /** Centroid (in world px) of a stroke's points — the pivot for scale/rotate. */
@@ -296,8 +297,10 @@ export function CanvasStage() {
           />
         )}
 
-        {/* EXTENSION POINT (T5 camera): camera rectangle overlay goes here,
-            inside the world transform so it tracks pan/zoom. */}
+        {/* T5 camera: the draggable/resizable camera viewport indicator. Lives
+            inside the world transform so it pans/zooms with the scene, and
+            interpolates between camera keyframes for `currentTime`. */}
+        <CameraOverlay time={currentTime} />
       </g>
 
       {/* EXTENSION POINT (T4 timeline): the bottom timeline bar is rendered as
