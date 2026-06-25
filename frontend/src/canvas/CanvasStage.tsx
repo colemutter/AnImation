@@ -121,6 +121,9 @@ export function CanvasStage() {
       const r = 24 / viewport.zoom
       for (let i = objects.length - 1; i >= 0; i--) {
         const obj = objects[i]
+        // Only freehand objects are hit-testable today; other variants
+        // (text/line/shapes/equation) get their own picking later.
+        if (obj.type !== 'freehand') continue
         const { position } = interpolateKeyframes(obj.keyframes, currentTime)
         for (const p of obj.points) {
           const dx = p.x + position[0] - worldX
@@ -277,16 +280,20 @@ export function CanvasStage() {
           </g>
         )}
 
-        {objects.map((obj) => (
-          <StrokePath
-            key={obj.id}
-            obj={obj}
-            time={currentTime}
-            selected={obj.id === selectedId}
-            // Live, uncommitted drag delta for the object being dragged.
-            live={liveDrag && liveDrag.id === obj.id ? liveDrag : null}
-          />
-        ))}
+        {objects
+          // Only freehand strokes have an SVG renderer today; other variants
+          // (text/line/shapes/equation) get their own renderers later.
+          .filter((obj): obj is FreehandObject => obj.type === 'freehand')
+          .map((obj) => (
+            <StrokePath
+              key={obj.id}
+              obj={obj}
+              time={currentTime}
+              selected={obj.id === selectedId}
+              // Live, uncommitted drag delta for the object being dragged.
+              live={liveDrag && liveDrag.id === obj.id ? liveDrag : null}
+            />
+          ))}
 
         {/* In-progress stroke, drawn with the active style. */}
         {draftPoints && draftPoints.length > 0 && (

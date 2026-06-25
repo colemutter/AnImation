@@ -18,13 +18,13 @@ canvas→Manim (y-UP, world units) transform is defined once in
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
 # Bump deliberately when the shape changes; consumers should reject unknown
 # major versions. See "Coordination Notes" in the subtasks doc.
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
 
 
 class _Model(BaseModel):
@@ -62,17 +62,17 @@ class StrokeStyle(_Model):
 
 
 # ---------------------------------------------------------------------------
-# Object variants (freehand first; rect/line/text slot in later)
+# Object variants. Each variant carries a unique ``type`` literal discriminant,
+# shared ``id``/``keyframes``, and its own geometry/style fields. They are
+# unioned below via a Pydantic discriminated union on ``type``.
 # ---------------------------------------------------------------------------
 
 
 class FreehandObject(_Model):
     """A freehand stroke: an ordered list of points plus stroke style.
 
-    This is the only object type implemented in v1. Future variants
-    (rect/line/text) will share ``id``/``type``/keyframes and be unioned via
-    the discriminated ``type`` field, so add new classes with a distinct
-    ``type`` literal rather than overloading this one.
+    The original v1 object type. Maps to a Manim path/``VMobject`` of the
+    points.
     """
 
     id: str
@@ -84,10 +84,123 @@ class FreehandObject(_Model):
     keyframes: list[ObjectKeyframe] = Field(default_factory=list)
 
 
-# Discriminated union of object variants. Today this is just FreehandObject;
-# adding ``RectObject`` etc. later means: define the class with a unique
-# ``type`` literal and add it to this union.
-SceneObject = FreehandObject
+class TextObject(_Model):
+    """A text box; ``position`` is the top-left anchor. Maps to Manim ``Text``."""
+
+    id: str
+    type: Literal["text"] = "text"
+    # Top-left anchor in canvas pixel space (y-DOWN).
+    position: list[float] = Field(min_length=2, max_length=2)
+    text: str
+    # Font size in canvas pixels.
+    font_size: float = Field(alias="fontSize", gt=0)
+    color: str = "#1e1e1e"
+    keyframes: list[ObjectKeyframe] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class EquationObject(_Model):
+    """A LaTeX equation box; top-left anchored. Maps to Manim ``MathTex``."""
+
+    id: str
+    type: Literal["equation"] = "equation"
+    # Top-left anchor in canvas pixel space (y-DOWN).
+    position: list[float] = Field(min_length=2, max_length=2)
+    # LaTeX source (math mode), e.g. "E = mc^2".
+    latex: str
+    font_size: float = Field(alias="fontSize", gt=0)
+    color: str = "#1e1e1e"
+    keyframes: list[ObjectKeyframe] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class LineObject(_Model):
+    """A straight line segment from ``start`` to ``end``. Maps to Manim ``Line``."""
+
+    id: str
+    type: Literal["line"] = "line"
+    # Endpoints in canvas pixel space (y-DOWN).
+    start: list[float] = Field(min_length=2, max_length=2)
+    end: list[float] = Field(min_length=2, max_length=2)
+    style: StrokeStyle = Field(default_factory=StrokeStyle)
+    keyframes: list[ObjectKeyframe] = Field(default_factory=list)
+
+
+class ArrowObject(_Model):
+    """A straight arrow from ``start`` (tail) to ``end`` (head). Maps to Manim ``Arrow``."""
+
+    id: str
+    type: Literal["arrow"] = "arrow"
+    # Tail/head in canvas pixel space (y-DOWN).
+    start: list[float] = Field(min_length=2, max_length=2)
+    end: list[float] = Field(min_length=2, max_length=2)
+    style: StrokeStyle = Field(default_factory=StrokeStyle)
+    keyframes: list[ObjectKeyframe] = Field(default_factory=list)
+
+
+class RectObject(_Model):
+    """An axis-aligned rectangle, top-left anchored. Maps to Manim ``Rectangle``."""
+
+    id: str
+    type: Literal["rect"] = "rect"
+    # Top-left corner in canvas pixel space (y-DOWN).
+    position: list[float] = Field(min_length=2, max_length=2)
+    # Extends right/down from ``position``, in canvas pixels.
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+    style: StrokeStyle = Field(default_factory=StrokeStyle)
+    # Fill color (CSS string), or None for no fill.
+    fill: str | None = None
+    keyframes: list[ObjectKeyframe] = Field(default_factory=list)
+
+
+class EllipseObject(_Model):
+    """An axis-aligned ellipse centered at ``center``. Maps to Manim ``Ellipse``."""
+
+    id: str
+    type: Literal["ellipse"] = "ellipse"
+    # Center in canvas pixel space (y-DOWN).
+    center: list[float] = Field(min_length=2, max_length=2)
+    # Horizontal/vertical radii in canvas pixels.
+    radius_x: float = Field(alias="radiusX", gt=0)
+    radius_y: float = Field(alias="radiusY", gt=0)
+    style: StrokeStyle = Field(default_factory=StrokeStyle)
+    fill: str | None = None
+    keyframes: list[ObjectKeyframe] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class TriangleObject(_Model):
+    """A triangle given by its three vertices. Maps to Manim ``Polygon``/``Triangle``."""
+
+    id: str
+    type: Literal["triangle"] = "triangle"
+    # Exactly three vertices as [x, y] pairs in canvas pixel space (y-DOWN).
+    points: list[list[float]] = Field(min_length=3, max_length=3)
+    style: StrokeStyle = Field(default_factory=StrokeStyle)
+    fill: str | None = None
+    keyframes: list[ObjectKeyframe] = Field(default_factory=list)
+
+
+# Discriminated union of object variants, keyed on the ``type`` literal. Adding
+# a variant later means: define the class with a unique ``type`` literal and add
+# it to this union.
+SceneObject = Annotated[
+    Union[
+        FreehandObject,
+        TextObject,
+        EquationObject,
+        LineObject,
+        ArrowObject,
+        RectObject,
+        EllipseObject,
+        TriangleObject,
+    ],
+    Field(discriminator="type"),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -138,8 +251,19 @@ class CameraKeyframe(_Model):
     zoom: float = Field(default=1.0, gt=0)
 
 
-# Resolve the forward reference now that ObjectKeyframe is defined.
-FreehandObject.model_rebuild()
+# Resolve the forward references now that ObjectKeyframe is defined. Every
+# object variant references ``ObjectKeyframe`` for its ``keyframes`` field.
+for _variant in (
+    FreehandObject,
+    TextObject,
+    EquationObject,
+    LineObject,
+    ArrowObject,
+    RectObject,
+    EllipseObject,
+    TriangleObject,
+):
+    _variant.model_rebuild()
 
 
 # ---------------------------------------------------------------------------

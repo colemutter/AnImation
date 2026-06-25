@@ -1,0 +1,117 @@
+{
+  "schemaVersion": "1.1.0",
+  "timeline": {
+    "durationSeconds": 4.0,
+    "fps": 30
+  },
+  "camera": {
+    "width": 1920,
+    "height": 1080,
+    "keyframes": [
+      { "t": 0.0, "center": [960, 540], "zoom": 1.0 },
+      { "t": 4.0, "center": [1100, 540], "zoom": 1.1 }
+    ]
+  },
+  "objects": [
+    {
+      "id": "text-1",
+      "type": "text",
+      "position": [200, 160],
+      "text": "Hello, Manim!",
+      "fontSize": 48,
+      "color": "#1e1e1e",
+      "keyframes": [
+        { "t": 0.0, "props": { "opacity": 0.0 } },
+        { "t": 1.0, "props": { "opacity": 1.0 } }
+      ]
+    },
+    {
+      "id": "equation-1",
+      "type": "equation",
+      "position": [200, 280],
+      "latex": "E = mc^2",
+      "fontSize": 56,
+      "color": "#1864ab",
+      "keyframes": [
+        { "t": 0.0, "props": { "position": [0, 0], "scale": 0.5, "opacity": 0.0 } },
+        { "t": 2.0, "props": { "position": [0, 0], "scale": 1.0, "opacity": 1.0 } }
+      ]
+    },
+    {
+      "id": "line-1",
+      "type": "line",
+      "start": [200, 480],
+      "end": [700, 480],
+      "style": { "color": "#e03131", "width": 4, "opacity": 1.0 },
+      "keyframes": [
+        { "t": 0.0, "props": { "position": [0, 0] } }
+      ]
+    },
+    {
+      "id": "arrow-1",
+      "type": "arrow",
+      "start": [200, 560],
+      "end": [700, 560],
+      "style": { "color": "#2f9e44", "width": 4, "opacity": 1.0 },
+      "keyframes": [
+        { "t": 0.0, "props": { "position": [0, 0], "opacity": 0.0 } },
+        { "t": 1.5, "props": { "position": [0, 0], "opacity": 1.0 } }
+      ]
+    },
+    {
+      "id": "rect-1",
+      "type": "rect",
+      "position": [900, 200],
+      "width": 320,
+      "height": 200,
+      "style": { "color": "#1971c2", "width": 3, "opacity": 1.0 },
+      "fill": "#a5d8ff",
+      "keyframes": [
+        { "t": 0.0, "props": { "position": [0, 0], "rotation": 0 } },
+        { "t": 4.0, "props": { "position": [0, 0], "rotation": 45 } }
+      ]
+    },
+    {
+      "id": "ellipse-1",
+      "type": "ellipse",
+      "center": [1400, 320],
+      "radiusX": 160,
+      "radiusY": 100,
+      "style": { "color": "#9c36b5", "width": 3, "opacity": 1.0 },
+      "fill": null,
+      "keyframes": [
+        { "t": 0.0, "props": { "scale": 1.0 } },
+        { "t": 4.0, "props": { "scale": 1.5 } }
+      ]
+    },
+    {
+      "id": "triangle-1",
+      "type": "triangle",
+      "points": [
+        [1000, 700],
+        [1300, 700],
+        [1150, 480]
+      ],
+      "style": { "color": "#e8590c", "width": 3, "opacity": 1.0 },
+      "fill": "#ffd8a8",
+      "keyframes": [
+        { "t": 0.0, "props": { "position": [0, 0], "opacity": 1.0 } }
+      ]
+    },
+    {
+      "id": "stroke-1",
+      "type": "freehand",
+      "points": [
+        { "x": 300, "y": 800 },
+        { "x": 360, "y": 760 },
+        { "x": 420, "y": 800 },
+        { "x": 480, "y": 760 }
+      ],
+      "style": { "color": "#1e1e1e", "width": 3, "opacity": 1.0 },
+      "keyframes": [
+        { "t": 0.0, "props": { "position": [0, 0] } },
+        { "t": 4.0, "props": { "position": [200, 0] } }
+      ]
+    }
+  ]
+}

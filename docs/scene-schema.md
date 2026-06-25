@@ -20,10 +20,15 @@ with **camelCase** keys (`schemaVersion`, `durationSeconds`).
 
 ## Versioning
 
-`schemaVersion` is currently `1.0.0`. It follows semver intent: bump the major
+`schemaVersion` is currently `1.1.0`. It follows semver intent: bump the major
 when a change is breaking. Consumers should reject a major version they do not
 understand rather than silently mis-parsing. Schema changes ripple to every
 downstream task (timeline, camera, agent, integration), so bump deliberately.
+
+> **`1.1.0` (additive).** Adds object variants beyond freehand:
+> `text`, `equation`, `line`, `arrow`, `rect`, `ellipse`, `triangle`
+> (see [New object variants](#new-object-variants-110)). v1.0 payloads still
+> validate unchanged; keyframes are shared across all variants.
 
 ## Top-level shape
 
@@ -58,11 +63,82 @@ downstream task (timeline, camera, agent, integration), so bump deliberately.
 }
 ```
 
-- `type` is a **discriminant**. Only `"freehand"` exists today; `rect`, `line`,
-  and `text` will be added later as additional members of the `SceneObject`
-  union, each with its own `type` literal and geometry fields. `points`/`style`
-  are freehand-specific.
+- `type` is a **discriminant**. `"freehand"` is the original variant; `1.1.0`
+  adds `text`, `equation`, `line`, `arrow`, `rect`, `ellipse`, `triangle`
+  (below), each with its own `type` literal and geometry fields. `points` /
+  `style` are freehand-specific.
 - `points` are **ordered** and in **canvas pixels (y-DOWN)**.
+
+### New object variants (1.1.0)
+
+All variants share `id`, a unique `type` literal, and a `keyframes` array using
+the **same** `{ t, props }` shape as freehand (position delta / scale / rotation
+/ opacity — no per-type keyframe shapes). All geometry is **canvas pixels,
+y-DOWN**. `style` is the shared `StrokeStyle` (`color`, `width`, `opacity`).
+Shape variants (`rect`, `ellipse`, `triangle`) also take an optional
+`fill` (CSS color string, or `null`/omitted for unfilled).
+
+The backend models this as a Pydantic v2 discriminated union on `type`
+(`Field(discriminator="type")`); the frontend mirrors it as a TS union.
+
+| `type` | Geometry fields | Extra fields | → Manim mobject |
+| --- | --- | --- | --- |
+| `text` | `position` `[x,y]` (top-left anchor) | `text`, `fontSize`, `color` | `Text` |
+| `equation` | `position` `[x,y]` (top-left anchor) | `latex`, `fontSize`, `color` | `MathTex` (LaTeX) |
+| `line` | `start` `[x,y]`, `end` `[x,y]` | `style` | `Line` |
+| `arrow` | `start` `[x,y]` (tail), `end` `[x,y]` (head) | `style` | `Arrow` |
+| `rect` | `position` `[x,y]` (top-left), `width`, `height` | `style`, `fill?` | `Rectangle` |
+| `ellipse` | `center` `[x,y]`, `radiusX`, `radiusY` | `style`, `fill?` | `Ellipse` |
+| `triangle` | `points` `[[x,y],[x,y],[x,y]]` (3 vertices) | `style`, `fill?` | `Polygon`/`Triangle` |
+
+```jsonc
+// text — top-left anchored; fontSize is in canvas px
+{ "id": "t1", "type": "text", "position": [200, 160],
+  "text": "Hello, Manim!", "fontSize": 48, "color": "#1e1e1e", "keyframes": [] }
+
+// equation — LaTeX (math mode); maps to MathTex
+{ "id": "eq1", "type": "equation", "position": [200, 280],
+  "latex": "E = mc^2", "fontSize": 56, "color": "#1864ab", "keyframes": [] }
+
+// line / arrow — two endpoints + StrokeStyle
+{ "id": "l1", "type": "line",  "start": [200, 480], "end": [700, 480],
+  "style": { "color": "#e03131", "width": 4, "opacity": 1.0 }, "keyframes": [] }
+{ "id": "a1", "type": "arrow", "start": [200, 560], "end": [700, 560],
+  "style": { "color": "#2f9e44", "width": 4, "opacity": 1.0 }, "keyframes": [] }
+
+// rect — top-left + size; optional fill
+{ "id": "r1", "type": "rect", "position": [900, 200], "width": 320, "height": 200,
+  "style": { "color": "#1971c2", "width": 3, "opacity": 1.0 },
+  "fill": "#a5d8ff", "keyframes": [] }
+
+// ellipse — center + radii; fill null = unfilled
+{ "id": "e1", "type": "ellipse", "center": [1400, 320], "radiusX": 160, "radiusY": 100,
+  "style": { "color": "#9c36b5", "width": 3, "opacity": 1.0 },
+  "fill": null, "keyframes": [] }
+
+// triangle — three [x,y] vertices
+{ "id": "tr1", "type": "triangle",
+  "points": [[1000, 700], [1300, 700], [1150, 480]],
+  "style": { "color": "#e8590c", "width": 3, "opacity": 1.0 },
+  "fill": "#ffd8a8", "keyframes": [] }
+```
+
+**Codegen guidance (T6).** Apply the canvas→Manim transform below to each
+variant's geometry just as for freehand points:
+- `text`/`equation`: map `position` (top-left) to a world point, then anchor the
+  mobject's top-left there (e.g. `.to_corner`/`.move_to` with `aligned_edge=UL`).
+  `fontSize` is canvas px — scale to Manim font size / use `scale()` consistently
+  with the px→units factor `s`. `equation` requires LaTeX provisioning; if LaTeX
+  is unavailable, fall back to `Text` or skip per the note at the bottom.
+- `line`/`arrow`: transform both endpoints; build `Line(p_start, p_end)` /
+  `Arrow(p_start, p_end)`.
+- `rect`: transform `position` to the top-left; `width`/`height` are scaled by
+  `s` (note the y-flip means the rect still extends "down" in canvas → toward
+  −y in Manim). Center the `Rectangle(width=w*s, height=h*s)` accordingly.
+- `ellipse`: transform `center`; `Ellipse(width=2*radiusX*s, height=2*radiusY*s)`.
+- `triangle`: transform the three vertices and build `Polygon(*verts)`.
+- For filled shapes, set `set_fill(fill, opacity=...)`; for `fill` null/omitted,
+  leave unfilled (`fill_opacity=0`).
 
 ### Keyframes and interpolation
 

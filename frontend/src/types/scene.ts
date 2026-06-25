@@ -15,7 +15,7 @@
  */
 
 /** Bump deliberately when the shape changes (keep in sync with backend). */
-export const SCHEMA_VERSION = '1.0.0' as const
+export const SCHEMA_VERSION = '1.1.0' as const
 
 /** A single 2D point in canvas pixel space (y-DOWN). */
 export interface Point {
@@ -57,9 +57,9 @@ export interface ObjectKeyframe {
 }
 
 /**
- * A freehand stroke: an ordered list of points plus stroke style. The only
- * object variant in v1. rect/line/text are added later as new members of the
- * `SceneObject` union, each with a distinct `type` discriminant.
+ * A freehand stroke: an ordered list of points plus stroke style. The original
+ * v1 object variant; see the other variants below, each keyed on a distinct
+ * `type` discriminant.
  */
 export interface FreehandObject {
   id: string
@@ -72,11 +72,145 @@ export interface FreehandObject {
 }
 
 /**
- * Discriminated union of object variants, keyed on `type`. Today just
- * `FreehandObject`; widen this union (e.g. `FreehandObject | RectObject`) as
- * new variants land.
+ * A text box. `position` is the top-left anchor of the text block in canvas
+ * pixels (y-DOWN). Maps to a Manim `Text` mobject.
  */
-export type SceneObject = FreehandObject
+export interface TextObject {
+  id: string
+  type: 'text'
+  /** Top-left anchor in canvas pixel space (y-DOWN). */
+  position: [number, number]
+  /** The text to render. */
+  text: string
+  /** Font size in canvas pixels. */
+  fontSize: number
+  /** CSS color string, e.g. "#1e1e1e". */
+  color: string
+  /** Per-object keyframes, sorted by `t` ascending. */
+  keyframes: ObjectKeyframe[]
+}
+
+/**
+ * A LaTeX equation box. `position` is the top-left anchor in canvas pixels
+ * (y-DOWN). Maps to a Manim `MathTex` mobject (LaTeX must be provisioned).
+ */
+export interface EquationObject {
+  id: string
+  type: 'equation'
+  /** Top-left anchor in canvas pixel space (y-DOWN). */
+  position: [number, number]
+  /** LaTeX source (math mode), e.g. "E = mc^2". */
+  latex: string
+  /** Font size in canvas pixels. */
+  fontSize: number
+  /** CSS color string, e.g. "#1e1e1e". */
+  color: string
+  /** Per-object keyframes, sorted by `t` ascending. */
+  keyframes: ObjectKeyframe[]
+}
+
+/**
+ * A straight line segment from `start` to `end` (canvas px, y-DOWN). Maps to a
+ * Manim `Line` mobject.
+ */
+export interface LineObject {
+  id: string
+  type: 'line'
+  /** Start point in canvas pixel space (y-DOWN). */
+  start: [number, number]
+  /** End point in canvas pixel space (y-DOWN). */
+  end: [number, number]
+  style: StrokeStyle
+  /** Per-object keyframes, sorted by `t` ascending. */
+  keyframes: ObjectKeyframe[]
+}
+
+/**
+ * A straight arrow from `start` (tail) to `end` (head), canvas px (y-DOWN).
+ * Maps to a Manim `Arrow` mobject.
+ */
+export interface ArrowObject {
+  id: string
+  type: 'arrow'
+  /** Tail point in canvas pixel space (y-DOWN). */
+  start: [number, number]
+  /** Head point in canvas pixel space (y-DOWN). */
+  end: [number, number]
+  style: StrokeStyle
+  /** Per-object keyframes, sorted by `t` ascending. */
+  keyframes: ObjectKeyframe[]
+}
+
+/**
+ * An axis-aligned rectangle. `position` is the top-left corner (canvas px,
+ * y-DOWN); `width`/`height` extend right/down. Maps to a Manim `Rectangle`.
+ */
+export interface RectObject {
+  id: string
+  type: 'rect'
+  /** Top-left corner in canvas pixel space (y-DOWN). */
+  position: [number, number]
+  /** Width in canvas pixels (extends to the right). */
+  width: number
+  /** Height in canvas pixels (extends downward). */
+  height: number
+  style: StrokeStyle
+  /** Fill color (CSS string), or null/omitted for no fill. */
+  fill?: string | null
+  /** Per-object keyframes, sorted by `t` ascending. */
+  keyframes: ObjectKeyframe[]
+}
+
+/**
+ * An axis-aligned ellipse centered at `center` (canvas px, y-DOWN) with
+ * horizontal/vertical radii. Maps to a Manim `Ellipse`.
+ */
+export interface EllipseObject {
+  id: string
+  type: 'ellipse'
+  /** Center point in canvas pixel space (y-DOWN). */
+  center: [number, number]
+  /** Horizontal radius in canvas pixels. */
+  radiusX: number
+  /** Vertical radius in canvas pixels. */
+  radiusY: number
+  style: StrokeStyle
+  /** Fill color (CSS string), or null/omitted for no fill. */
+  fill?: string | null
+  /** Per-object keyframes, sorted by `t` ascending. */
+  keyframes: ObjectKeyframe[]
+}
+
+/**
+ * A triangle defined by its three vertices (canvas px, y-DOWN). Maps to a
+ * Manim `Polygon` (or `Triangle`) of the three points.
+ */
+export interface TriangleObject {
+  id: string
+  type: 'triangle'
+  /** The three vertices in canvas pixel space (y-DOWN). */
+  points: [[number, number], [number, number], [number, number]]
+  style: StrokeStyle
+  /** Fill color (CSS string), or null/omitted for no fill. */
+  fill?: string | null
+  /** Per-object keyframes, sorted by `t` ascending. */
+  keyframes: ObjectKeyframe[]
+}
+
+/**
+ * Discriminated union of object variants, keyed on `type`. Widen this union as
+ * new variants land. Keyframes are shared across all variants (the same
+ * `ObjectProps`: position delta / scale / rotation / opacity).
+ */
+export type SceneObject =
+  | FreehandObject
+  | TextObject
+  | EquationObject
+  | LineObject
+  | ArrowObject
+  | RectObject
+  | EllipseObject
+  | TriangleObject
 
 /**
  * A camera keyframe: where the camera frame is centered (canvas px, y-DOWN)
