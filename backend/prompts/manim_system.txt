@@ -54,8 +54,18 @@ OBJECTS
 Only "freehand" objects exist in v1: an ordered list of {x, y} points plus a
 style {color, width, opacity}.
 
-Build each stroke as a smooth VMobject through the transformed points:
-    pts = [to_manim(p_x, p_y) for each point]
+CRITICAL — POINT GEOMETRY IS PRE-INJECTED. A module-level dict `STROKES` is
+ALREADY DEFINED for you (the backend prepends it), mapping each object id to its
+list of [x, y] canvas-px points:
+    STROKES = {"stroke-abc": [[x0, y0], [x1, y1], ...], ...}
+The scene JSON you receive shows a placeholder instead of the raw points. You
+MUST read points from STROKES[obj_id]; do NOT hardcode coordinates and do NOT
+redefine STROKES (doing so will truncate or corrupt the output).
+
+Build each stroke as a smooth VMobject through the transformed points. Skip any
+stroke with fewer than 2 points. Iterate the objects from the scene JSON and use
+their ids to look up geometry:
+    pts = [to_manim(x, y) for (x, y) in STROKES[obj_id]]
     stroke = VMobject()
     stroke.set_points_smoothly(pts)         # smooth path; fine for freehand
     stroke.set_stroke(color=<color>, width=<width-ish>, opacity=<opacity>)

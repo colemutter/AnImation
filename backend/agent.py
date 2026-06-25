@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -148,15 +149,55 @@ def _load_system_prompt() -> str:
     return PROMPT_PATH.read_text(encoding="utf-8")
 
 
-def _scene_to_user_message(scene: Scene) -> str:
-    """Render the scene payload (camelCase JSON) as the user turn."""
+def _geometry_block(scene: Scene) -> str:
+    """Build the injected ``STROKES`` data block (real point geometry).
+
+    Freehand strokes can have hundreds of points. Having the LLM transcribe
+    those as code literals blows past ``max_tokens`` (truncating the module) and
+    risks copy errors. Instead we inject the real geometry deterministically and
+    have the model reference ``STROKES[obj_id]``. Returns a Python prelude that
+    defines ``STROKES`` (a dict: object id -> list of ``[x, y]`` canvas px).
+    """
     payload = scene.model_dump(by_alias=True)
-    pretty = json.dumps(payload, indent=2)
+    strokes: dict[str, list[list[float]]] = {}
+    for obj in payload.get("objects", []):
+        if obj.get("type") == "freehand":
+            strokes[obj["id"]] = [
+                [round(p["x"], 2), round(p["y"], 2)] for p in obj.get("points", [])
+            ]
+    return (
+        "# Injected stroke geometry (canvas px, y-DOWN), keyed by object id.\n"
+        "# Provided by the backend so the model never transcribes point arrays.\n"
+        "STROKES = " + json.dumps(strokes) + "\n\n\n"
+    )
+
+
+def _scene_to_user_message(scene: Scene) -> str:
+    """Render the scene payload as the user turn, WITH bulk points stripped.
+
+    Each object's ``points`` array is replaced with a placeholder referencing
+    ``STROKES[id]`` (see :func:`_geometry_block`), so the model sees the
+    structure, style, and keyframes but is neither able nor asked to transcribe
+    the raw coordinates.
+    """
+    payload = scene.model_dump(by_alias=True)
+    stripped = json.loads(json.dumps(payload))  # deep copy
+    for obj in stripped.get("objects", []):
+        if "points" in obj:
+            n = len(obj["points"])
+            obj["points"] = (
+                f"<{n} points provided at runtime as STROKES[{obj['id']!r}]>"
+            )
+    pretty = json.dumps(stripped, indent=2)
     return (
         "Convert the following scene JSON into a single MovingCameraScene "
         "Manim class, applying the coordinate transform and keyframe->animation "
-        "mapping from the system instructions. Respond ONLY by calling the "
-        "emit_manim tool.\n\nSCENE JSON:\n" + pretty
+        "mapping from the system instructions.\n\n"
+        "IMPORTANT: a module-level dict `STROKES` is ALREADY DEFINED (mapping "
+        "each object id to its list of [x, y] canvas-px points). Build each "
+        "stroke's points from `STROKES[obj_id]` via to_manim(); NEVER hardcode "
+        "point coordinates and NEVER redefine STROKES.\n\n"
+        "Respond ONLY by calling the emit_manim tool.\n\nSCENE JSON:\n" + pretty
     )
 
 
@@ -223,6 +264,10 @@ def generate_manim(scene: Scene, *, model: str = MODEL_DEFAULT) -> dict[str, str
     client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from the env
     system_prompt = _load_system_prompt()
 
+    # Deterministic geometry prelude prepended to whatever the model emits, so
+    # the model only writes the (small) animation logic and references STROKES.
+    geometry = _geometry_block(scene)
+
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": _scene_to_user_message(scene)}
     ]
@@ -239,6 +284,11 @@ def generate_manim(scene: Scene, *, model: str = MODEL_DEFAULT) -> dict[str, str
             messages=messages,
         )
         last = _extract_tool_result(response)
+        # Inject the real point geometry ahead of the model's module. Only skip
+        # if the model actually DEFINED STROKES itself (an assignment), not when
+        # it merely references it (the expected case).
+        if not re.search(r"^\s*STROKES\s*=", last["code"], re.MULTILINE):
+            last["code"] = geometry + last["code"]
         ok, reason = validate_code(last["code"])
         if ok:
             return last
