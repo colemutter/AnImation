@@ -147,12 +147,14 @@ the camera, like the example), a simpler single-window approach is acceptable
 as long as the motion is correct.
 
 =============================================================================
-COLORS
+BACKGROUND & COLORS
 =============================================================================
-Use the literal hex/CSS color strings from the payload directly (Manim accepts
-hex strings like "#1e1e1e"). Default to a dark stroke if missing. Ensure
-strokes are visible against Manim's default black background — if a stroke
-color is near-black, you MAY lighten it slightly, but otherwise keep it.
+The app canvas is WHITE with dark strokes, so the animation must use a WHITE
+background to match. As the FIRST line of construct(), set:
+    self.camera.background_color = WHITE
+Then use the literal hex/CSS color strings from the payload directly (Manim
+accepts hex strings like "#1e1e1e"); do NOT alter them — they are authored
+against a white background. Default to a dark stroke ("#1e1e1e") if missing.
 
 =============================================================================
 OUTPUT

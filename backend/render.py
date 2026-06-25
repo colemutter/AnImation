@@ -169,6 +169,14 @@ def render_manim(code: str, *, timeout: int = RENDER_TIMEOUT_SECONDS) -> RenderR
         scene_file = workdir / "scene.py"
         scene_file.write_text(code, encoding="utf-8")
 
+        # Match the app's WHITE canvas. Manim defaults to a BLACK background, so
+        # the canvas's dark strokes (e.g. #1e1e1e) would render invisibly. A
+        # manim.cfg in the working dir sets the default deterministically (the
+        # generated scene can still override via self.camera.background_color).
+        (workdir / "manim.cfg").write_text(
+            "[CLI]\nbackground_color = WHITE\n", encoding="utf-8"
+        )
+
         manim_media = workdir / "manim_media"
         cmd = _build_command(scene_file, scene_name, manim_media)
         log_chunks.append(f"$ {' '.join(cmd)}\n")
