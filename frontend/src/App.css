@@ -15,12 +15,36 @@
   min-height: 100svh;
 }
 
+/* --- Split-screen shell (T7): editor pane | preview panel --- */
 .app-shell {
-  position: relative;
+  display: flex;
+  flex-direction: row;
   width: 100%;
   height: 100svh;
   overflow: hidden;
   background: var(--bg);
+}
+
+/* Left pane: the live editor. Replaces the old full-bleed .app-shell as the
+   positioning context for the floating palette / timeline / camera overlays,
+   which anchor (absolute/inset) to this element. */
+.editor-pane {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* On narrow viewports stack the panes vertically so neither collapses. */
+@media (max-width: 860px) {
+  .app-shell {
+    flex-direction: column;
+  }
+  .editor-pane {
+    flex: 1 1 60%;
+  }
 }
 
 /* Full-bleed drawing surface. */
@@ -257,4 +281,200 @@
     sans-serif;
   font-weight: 600;
   letter-spacing: 0.08em;
+}
+
+/* --- Preview panel (T7): Convert action + rendered video --- */
+.preview-panel {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--social-bg);
+  border-inline-start: 1px solid var(--border);
+  box-sizing: border-box;
+}
+
+@media (max-width: 860px) {
+  .preview-panel {
+    flex: 1 1 40%;
+    border-inline-start: none;
+    border-block-start: 1px solid var(--border);
+  }
+}
+
+.preview-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.preview-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-h);
+  letter-spacing: -0.01em;
+}
+
+.preview-convert {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  padding: 0 16px;
+  border: 1px solid var(--accent-border);
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    filter 0.15s,
+    opacity 0.15s;
+}
+
+.preview-convert:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+
+.preview-convert:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+.preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+/* Shared centered state block (empty / loading / error). */
+.preview-state {
+  max-width: 420px;
+  text-align: center;
+  color: var(--text);
+}
+
+.preview-state-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.preview-state-hint {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.preview-state--error {
+  max-width: 100%;
+  width: 100%;
+  align-self: stretch;
+  text-align: left;
+}
+
+.preview-state--error .preview-state-title {
+  color: #d6336c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .preview-state--error .preview-state-title {
+    color: #ff8fb1;
+  }
+}
+
+/* Loading spinner. */
+.preview-spinner {
+  width: 28px;
+  height: 28px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  animation: preview-spin 0.8s linear infinite;
+}
+
+@keyframes preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Success: the video + agent notes. */
+.preview-result {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.preview-video {
+  width: 100%;
+  max-height: 70vh;
+  border-radius: 10px;
+  background: #000;
+  box-shadow: var(--shadow);
+}
+
+.preview-notes {
+  width: 100%;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.preview-notes summary {
+  cursor: pointer;
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.preview-notes p {
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+
+/* Render logs (shown on error). */
+.preview-logs {
+  width: 100%;
+  margin: 12px 0;
+}
+
+.preview-logs summary {
+  cursor: pointer;
+  color: var(--text-h);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.preview-logs-pre {
+  margin: 8px 0 0;
+  padding: 12px;
+  max-height: 320px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
