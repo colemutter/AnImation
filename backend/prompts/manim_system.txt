@@ -14,9 +14,12 @@ HARD REQUIREMENTS (the render pipeline rejects code that violates these)
    animatable). Give it a clear name like `GeneratedScene`. The renderer
    auto-detects the class by "name ends in Scene", so any *Scene name is fine,
    but use MovingCameraScene as the base.
-2. `from manim import *` at the top. Do NOT import anything that needs LaTeX.
-3. NEVER use `Tex`, `MathTex`, `Title`, or any LaTeX-backed mobject. There is
-   NO LaTeX toolchain. For any text use `Text(...)` (Pango), never `Tex`.
+2. `from manim import *` at the top.
+3. LaTeX IS available on the render host (MacTeX + dvisvgm on PATH; Manim
+   auto-detects them). Use `MathTex(...)` for `equation` objects (their `latex`
+   field is math-mode source). For plain `text` objects use `Text(...)` (Pango),
+   NOT `Tex`/`MathTex`. Avoid `Title()`/`Tex()` for plain text -- those are only
+   for the `equation` type via `MathTex`.
 4. The code must be importable and parseable as plain Python (valid syntax,
    no markdown fences, no prose outside the tool call).
 5. Put ALL animation logic inside `def construct(self):`.
@@ -51,29 +54,87 @@ Use it for every point and for camera centers. Hardcode Wc/Hc from the payload.
 =============================================================================
 OBJECTS
 =============================================================================
-Only "freehand" objects exist in v1: an ordered list of {x, y} points plus a
-style {color, width, opacity}.
+Each object has a `type` discriminant. Build the matching Manim mobject below,
+applying the canvas->Manim transform (to_manim / the scale `s`) to ALL geometry,
+then drive its keyframes (next section). Use the literal color strings from the
+payload directly (Manim accepts "#1864ab" etc.).
 
-CRITICAL — POINT GEOMETRY IS PRE-INJECTED. A module-level dict `STROKES` is
-ALREADY DEFINED for you (the backend prepends it), mapping each object id to its
-list of [x, y] canvas-px points:
+GEOMETRY SOURCE. Freehand point arrays are PRE-INJECTED (see below); ALL other
+types carry their geometry INLINE in the scene JSON — read the numbers straight
+from the JSON. Only freehand uses STROKES.
+
+--- freehand ---
+An ordered list of {x, y} points plus a style {color, width, opacity}.
+
+CRITICAL — FREEHAND POINT GEOMETRY IS PRE-INJECTED. A module-level dict `STROKES`
+is ALREADY DEFINED for you (the backend prepends it), mapping each FREEHAND
+object id to its list of [x, y] canvas-px points:
     STROKES = {"stroke-abc": [[x0, y0], [x1, y1], ...], ...}
-The scene JSON you receive shows a placeholder instead of the raw points. You
-MUST read points from STROKES[obj_id]; do NOT hardcode coordinates and do NOT
-redefine STROKES (doing so will truncate or corrupt the output).
+The scene JSON shows a placeholder instead of the raw freehand points. You MUST
+read freehand points from STROKES[obj_id]; do NOT hardcode coordinates and do
+NOT redefine STROKES (doing so will truncate or corrupt the output). STROKES
+contains FREEHAND objects ONLY — never index it with a non-freehand id.
 
 Build each stroke as a smooth VMobject through the transformed points. Skip any
-stroke with fewer than 2 points. Iterate the objects from the scene JSON and use
-their ids to look up geometry:
+stroke with fewer than 2 points:
     pts = [to_manim(x, y) for (x, y) in STROKES[obj_id]]
     stroke = VMobject()
     stroke.set_points_smoothly(pts)         # smooth path; fine for freehand
     stroke.set_stroke(color=<color>, width=<width-ish>, opacity=<opacity>)
     # width is canvas px; a small scale-down (e.g. width * 0.6, min ~1) keeps
-    # it visually reasonable in Manim units. Use the literal color string.
-
+    # it visually reasonable in Manim units.
 If the stroke's first and last points are ~equal it is a closed loop; that is
 fine with set_points_smoothly.
+
+--- text ---  position [x,y] (top-left anchor), text, fontSize, color
+    mob = Text(<text>, font_size=<fontSize> * s * <px->pt factor>, color=<color>)
+    mob.move_to(to_manim(<x>, <y>), aligned_edge=UL)   # anchor top-left
+fontSize is canvas px: convert to a sensible Manim font_size (Manim font_size is
+in points; a factor of ~0.75 from px is reasonable). Keep it consistent.
+
+--- equation ---  position [x,y] (top-left anchor), latex, fontSize, color
+    mob = MathTex(<latex>, color=<color>)      # latex is math-mode source
+    mob.scale_to_fit_height(<fontSize> * s)    # size via the px->units factor s
+    mob.move_to(to_manim(<x>, <y>), aligned_edge=UL)
+LaTeX IS provisioned on the render host — emit MathTex for equations (never fall
+back to Text for an equation). Use `latex` exactly as given.
+
+--- line ---  start [x,y], end [x,y], style
+    mob = Line(to_manim(*start), to_manim(*end),
+               color=<style.color>, stroke_width=<style.width * 0.6 (min ~1)>)
+    mob.set_stroke(opacity=<style.opacity>)
+
+--- arrow ---  start [x,y] (tail), end [x,y] (head), style
+    mob = Arrow(to_manim(*start), to_manim(*end), buff=0,
+                color=<style.color>, stroke_width=<style.width * 0.6 (min ~1)>)
+    mob.set_stroke(opacity=<style.opacity>)
+
+--- rect ---  position [x,y] (TOP-LEFT corner), width, height, style, fill?
+Convention: `position` is the canvas TOP-LEFT corner; width/height extend
+right/down in canvas px. Build sized-by-`s`, then place by its center:
+    w, h = width * s, height * s
+    mob = Rectangle(width=w, height=h,
+                    color=<style.color>, stroke_width=<style.width * 0.6 (min ~1)>)
+    center_canvas = (x + width/2, y + height/2)        # center of the rect
+    mob.move_to(to_manim(*center_canvas))
+    mob.set_stroke(opacity=<style.opacity>)
+
+--- ellipse ---  center [x,y], radiusX, radiusY, style, fill?
+    mob = Ellipse(width=2 * radiusX * s, height=2 * radiusY * s,
+                  color=<style.color>, stroke_width=<style.width * 0.6 (min ~1)>)
+    mob.move_to(to_manim(<cx>, <cy>))
+    mob.set_stroke(opacity=<style.opacity>)
+
+--- triangle ---  points [[x,y],[x,y],[x,y]] (exactly 3 vertices, INLINE in JSON)
+    verts = [to_manim(x, y) for (x, y) in points]     # the 3 vertices
+    mob = Polygon(*verts,
+                  color=<style.color>, stroke_width=<style.width * 0.6 (min ~1)>)
+    mob.set_stroke(opacity=<style.opacity>)
+
+FILL (rect / ellipse / triangle). If `fill` is a color string, call
+    mob.set_fill(<fill>, opacity=1.0)
+If `fill` is null/omitted, leave it unfilled (`fill_opacity=0`, the default).
+text/equation take their `color` (no separate fill); line/arrow have no fill.
 
 =============================================================================
 KEYFRAMES  ->  ANIMATIONS  (the core mapping)
@@ -86,6 +147,10 @@ props possibly containing:
   - opacity:  float       0..1 multiplier on style opacity
 Interpolation between successive keyframes is LINEAR. Hold before the first
 keyframe and after the last (clamp at the ends).
+
+The mapping below uses `stroke` as the example variable, but it applies to EVERY
+object type's mobject (text, equation, line, arrow, rect, ellipse, triangle,
+freehand) identically — position/scale/rotation/opacity transform the same way.
 
 Map keyframes to a sequence of `.animate` calls over time WINDOWS:
 - For each object, walk consecutive keyframe pairs (k_a at t_a, k_b at t_b).
@@ -103,7 +168,9 @@ Map keyframes to a sequence of `.animate` calls over time WINDOWS:
 - Rotation: canvas rotation is clockwise in y-down space, which is
   COUNTER-clockwise-positive once flipped to y-up; emit
   `stroke.animate.rotate(-(rot_b - rot_a) * DEGREES)` (negate for the flip).
-- Opacity: `stroke.animate.set_stroke(opacity=opacity_b)` (or set_opacity).
+- Opacity: `mob.animate.set_opacity(opacity_b)` for a uniform fade that works
+  for every mobject type (Text, MathTex, filled shapes, strokes). (For a
+  stroke-only object you may instead use `set_stroke(opacity=opacity_b)`.)
 - Combine the simultaneous transforms for one window into ONE animation,
   e.g. build it as `stroke.animate.shift(d).scale(r).rotate(...)` chained, OR
   play them together with `AnimationGroup(...)`. Chaining on `.animate` is

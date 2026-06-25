@@ -56,15 +56,65 @@ The system prompt (`manim_system.txt`) carries the domain knowledge so the user
 turn is just the scene JSON. It pins, in order of importance:
 
 1. **Hard render constraints** — exactly one class subclassing
-   `MovingCameraScene`; `from manim import *`; **no LaTeX** (`Tex`/`MathTex`/
-   `Title` are banned — `Text(...)` only, because the render host has no LaTeX
-   toolchain); valid importable Python with all logic in `construct`.
+   `MovingCameraScene`; `from manim import *`; valid importable Python with all
+   logic in `construct`. **LaTeX is available** on the render host, so
+   `equation` objects use `MathTex`; plain `text` still uses `Text(...)` (Pango).
 2. **The coordinate transform** (see below) with an explicit `to_manim(px, py)`
    helper the model must emit and reuse for every point and camera center.
-3. **The keyframe → animation mapping** (see below).
-4. **Camera driving** from `camera.keyframes`.
-5. **Freehand rendering** — a `VMobject` built with `set_points_smoothly` over
+3. **The per-object-type Manim mapping** (see [Object type → Manim mobject](#object-type--manim-mobject)).
+4. **The keyframe → animation mapping** (see below).
+5. **Camera driving** from `camera.keyframes`.
+6. **Freehand rendering** — a `VMobject` built with `set_points_smoothly` over
    the transformed stroke points.
+
+## Object type → Manim mobject
+
+Schema `1.1.0` adds object variants beyond `freehand`. The prompt maps each
+`type` to a Manim mobject, applying the canvas→Manim transform (the `to_manim`
+helper / px→units factor `s`) to ALL geometry, then drives its keyframes the
+same way for every type.
+
+| `type` | Geometry (canvas px, y-DOWN) | Manim mobject | Notes |
+| --- | --- | --- | --- |
+| `freehand` | `points` (via `STROKES`, see below) | `VMobject` + `set_points_smoothly` | only type using `STROKES` |
+| `text` | `position` (top-left) | `Text(text, font_size=…)` | `.move_to(to_manim(pos), aligned_edge=UL)`; color from `color` |
+| `equation` | `position` (top-left) | `MathTex(latex)` | LaTeX math source; size via `scale_to_fit_height(fontSize*s)`; color from `color` |
+| `line` | `start`, `end` | `Line(to_manim(start), to_manim(end))` | stroke color/width/opacity from `style` |
+| `arrow` | `start` (tail), `end` (head) | `Arrow(to_manim(start), to_manim(end), buff=0)` | stroke from `style` |
+| `rect` | `position` (top-left), `width`, `height` | `Rectangle(width=w*s, height=h*s)` | centered at `(x+w/2, y+h/2)`; `fill` via `set_fill` |
+| `ellipse` | `center`, `radiusX`, `radiusY` | `Ellipse(width=2*rx*s, height=2*ry*s)` | `.move_to(to_manim(center))`; `fill` via `set_fill` |
+| `triangle` | `points` (3 vertices, **inline**) | `Polygon(*[to_manim(x,y) …])` | vertices inline in JSON, NOT in `STROKES`; `fill` via `set_fill` |
+
+Stroke style (`color`/`width`/`opacity`) is applied to all stroked shapes
+(freehand/line/arrow/rect/ellipse/triangle); canvas `width` is scaled down
+(~`*0.6`, min ~1) for Manim units. Filled shapes (`rect`/`ellipse`/`triangle`)
+call `set_fill(fill, opacity=1.0)` when `fill` is a color string and stay
+unfilled (`fill_opacity=0`) when `fill` is null/omitted. Background stays WHITE.
+
+### Freehand-only geometry stripping (important)
+
+`_geometry_block` injects a module-level `STROKES` dict — but for **freehand
+objects only** (freehand strokes can hold hundreds of points; transcribing them
+as code literals risks truncating the module past `max_tokens`).
+`_scene_to_user_message` correspondingly strips the `points` array **only when
+`type == "freehand"`**, replacing it with a `STROKES[id]` placeholder.
+
+All other types keep their geometry **inline** in the user message. This matters
+for `triangle`, which also has a `points` field (its three `[x, y]` vertices):
+those vertices are tiny and are NOT in `STROKES`, so they are left inline and the
+model uses the numbers directly. (Stripping them would have pointed the model at
+an undefined `STROKES[triangle_id]`.)
+
+## LaTeX dependency
+
+`equation` objects render via Manim's `MathTex`, which shells out to a LaTeX
+toolchain. **The render host therefore requires LaTeX installed** — a TeX
+distribution (e.g. **MacTeX** on macOS) plus **`dvisvgm`** — both on `PATH`.
+Manim auto-detects them; no extra config is needed beyond having them installed.
+`validate_code` no longer rejects `MathTex`/`Tex`. If the toolchain is missing,
+equation renders fail at the Manim step (surfaced as a `status="error"` with
+LaTeX/`dvisvgm` errors in the render logs) — a host provisioning issue, not a
+codegen bug.
 
 The user message is the `by_alias=True` (camelCase) JSON dump of the scene plus
 a one-line instruction to respond only via `emit_manim`.
@@ -126,8 +176,11 @@ window.
 1. non-empty,
 2. `ast.parse` succeeds (valid syntax),
 3. defines a class whose base name ends in `Scene` (mirrors
-   `render.detect_scene_name` so we accept exactly what the renderer runs),
-4. contains no banned LaTeX mobjects.
+   `render.detect_scene_name` so we accept exactly what the renderer runs).
+
+LaTeX-backed mobjects (`MathTex`/`Tex`) are **no longer rejected** — `equation`
+objects need `MathTex`, and the render host now provisions LaTeX (see
+[LaTeX dependency](#latex-dependency)).
 
 On failure the agent **retries once**, appending the assistant's tool call and a
 `tool_result` describing the validation error, asking the model to fix it. If

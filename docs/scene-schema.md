@@ -128,8 +128,9 @@ variant's geometry just as for freehand points:
 - `text`/`equation`: map `position` (top-left) to a world point, then anchor the
   mobject's top-left there (e.g. `.to_corner`/`.move_to` with `aligned_edge=UL`).
   `fontSize` is canvas px — scale to Manim font size / use `scale()` consistently
-  with the px→units factor `s`. `equation` requires LaTeX provisioning; if LaTeX
-  is unavailable, fall back to `Text` or skip per the note at the bottom.
+  with the px→units factor `s`. `equation` → `MathTex` (math-mode `latex`); the
+  render host now provisions LaTeX (MacTeX + `dvisvgm` on `PATH`), so emit
+  `MathTex` rather than falling back to `Text`.
 - `line`/`arrow`: transform both endpoints; build `Line(p_start, p_end)` /
   `Arrow(p_start, p_end)`.
 - `rect`: transform `position` to the top-left; `width`/`height` are scaled by
@@ -256,5 +257,5 @@ with a slight zoom-in, matching the camera keyframes.
 
 > The agent (T6) should apply this transform per-frame (or per-keyframe, since
 > the mapping is affine and Manim interpolates linearly) when emitting
-> `MovingCameraScene` code, and must avoid `Tex`/`MathTex` unless LaTeX is
-> provisioned.
+> `MovingCameraScene` code. `equation` objects use `MathTex`: the render host
+> provisions LaTeX (MacTeX + `dvisvgm` on `PATH`), which Manim auto-detects.

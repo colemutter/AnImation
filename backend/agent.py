@@ -12,9 +12,10 @@ Design
   ``tool_choice`` pins that tool so we always get a clean object back instead
   of having to scrape a code fence out of free text.
 * The bulk of the domain knowledge -- the canvas->Manim coordinate transform,
-  the keyframe->animation mapping, the "no LaTeX" constraint, and the
-  ``MovingCameraScene`` contract -- lives in the system prompt
-  (``backend/prompts/manim_system.txt``).
+  the per-object-type Manim mobject mapping (including ``MathTex`` for
+  ``equation`` objects; LaTeX is provisioned on the render host), the
+  keyframe->animation mapping, and the ``MovingCameraScene`` contract -- lives
+  in the system prompt (``backend/prompts/manim_system.txt``).
 * Returned code is **statically validated** before we trust it: it must
   ``ast.parse`` and define a class whose base name ends in ``Scene``. On
   failure we retry once (feeding the parse/validation error back to the model),
@@ -73,7 +74,8 @@ EMIT_TOOL = {
                 "description": (
                     "Complete Manim Python module: imports, one "
                     "MovingCameraScene subclass, full construct(). No markdown "
-                    "fences, no LaTeX (no Tex/MathTex)."
+                    "fences. Use Text(...) for plain text and MathTex(...) for "
+                    "equations (LaTeX is provisioned on the render host)."
                 ),
             },
             "notes": {
@@ -133,10 +135,11 @@ def validate_code(code: str) -> tuple[bool, str]:
             "no class subclassing a *Scene type was found; define one class "
             "subclassing MovingCameraScene.",
         )
-    # Cheap LaTeX guard: the render host has no LaTeX toolchain.
-    for banned in ("MathTex(", "Tex(", "Title("):
-        if banned in code:
-            return False, f"uses LaTeX-backed mobject {banned!r}; use Text(...) instead."
+    # NOTE: LaTeX-backed mobjects (MathTex/Tex) are now ALLOWED. The render host
+    # provisions a LaTeX toolchain (MacTeX + dvisvgm on PATH), which Manim
+    # auto-detects, so `equation` objects can render as MathTex. We therefore no
+    # longer reject them here. Plain text still belongs in Text(...) (see the
+    # system prompt), but that is a quality preference, not a hard reject.
     return True, ""
 
 
@@ -173,17 +176,25 @@ def _geometry_block(scene: Scene) -> str:
 
 
 def _scene_to_user_message(scene: Scene) -> str:
-    """Render the scene payload as the user turn, WITH bulk points stripped.
+    """Render the scene payload as the user turn, with FREEHAND points stripped.
 
-    Each object's ``points`` array is replaced with a placeholder referencing
-    ``STROKES[id]`` (see :func:`_geometry_block`), so the model sees the
-    structure, style, and keyframes but is neither able nor asked to transcribe
-    the raw coordinates.
+    Only ``freehand`` objects have their (potentially huge) ``points`` array
+    replaced with a placeholder referencing ``STROKES[id]`` (see
+    :func:`_geometry_block`), so the model sees the structure, style, and
+    keyframes but is neither able nor asked to transcribe the raw coordinates.
+
+    IMPORTANT: this stripping is FREEHAND-ONLY. ``triangle`` objects also carry
+    a ``points`` field (exactly three ``[x, y]`` vertices), but that geometry is
+    *tiny* and is NOT injected into ``STROKES`` (which holds freehand strokes
+    only). Stripping it would point the model at an undefined ``STROKES[id]``.
+    Non-freehand geometry (triangle vertices, line/arrow endpoints, rect/ellipse
+    anchors) is left inline so the model uses the real numbers directly.
     """
     payload = scene.model_dump(by_alias=True)
     stripped = json.loads(json.dumps(payload))  # deep copy
     for obj in stripped.get("objects", []):
-        if "points" in obj:
+        # Strip/redirect points for freehand ONLY; everything else stays inline.
+        if obj.get("type") == "freehand" and "points" in obj:
             n = len(obj["points"])
             obj["points"] = (
                 f"<{n} points provided at runtime as STROKES[{obj['id']!r}]>"
@@ -194,9 +205,14 @@ def _scene_to_user_message(scene: Scene) -> str:
         "Manim class, applying the coordinate transform and keyframe->animation "
         "mapping from the system instructions.\n\n"
         "IMPORTANT: a module-level dict `STROKES` is ALREADY DEFINED (mapping "
-        "each object id to its list of [x, y] canvas-px points). Build each "
-        "stroke's points from `STROKES[obj_id]` via to_manim(); NEVER hardcode "
-        "point coordinates and NEVER redefine STROKES.\n\n"
+        "each FREEHAND object id to its list of [x, y] canvas-px points). Build "
+        "each freehand stroke's points from `STROKES[obj_id]` via to_manim(); "
+        "NEVER hardcode freehand point coordinates and NEVER redefine STROKES. "
+        "STROKES holds freehand strokes ONLY -- all other object types "
+        "(text, equation, line, arrow, rect, ellipse, triangle) carry their "
+        "geometry INLINE in the scene JSON below; use those numbers directly "
+        "(e.g. a triangle's three `points` vertices are right here in the "
+        "JSON, NOT in STROKES).\n\n"
         "Respond ONLY by calling the emit_manim tool.\n\nSCENE JSON:\n" + pretty
     )
 
@@ -310,8 +326,8 @@ def generate_manim(scene: Scene, *, model: str = MODEL_DEFAULT) -> dict[str, str
                         "content": (
                             "The code you emitted failed validation: "
                             f"{reason}. Fix it and call emit_manim again with a "
-                            "single MovingCameraScene subclass, valid Python "
-                            "syntax, and no LaTeX-backed mobjects."
+                            "single MovingCameraScene subclass and valid Python "
+                            "syntax (MathTex is allowed for equations)."
                         ),
                     }
                 ],
