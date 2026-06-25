@@ -10,8 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "perfect-freehand": "^1.2.3",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",
